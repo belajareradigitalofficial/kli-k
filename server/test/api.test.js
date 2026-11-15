@@ -15,7 +15,7 @@ before(async () => {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.CORS_ORIGIN = "http://localhost:5173";
 
-  const app = createApp({ db: createFakePrisma() });
+  const app = createApp({ db: createFakePrisma(), serveFrontend: false });
   server = app.listen(0);
   await new Promise((r) => server.once("listening", r));
   baseUrl = `http://127.0.0.1:${server.address().port}`;

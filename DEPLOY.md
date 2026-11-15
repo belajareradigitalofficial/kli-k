@@ -1,0 +1,256 @@
+# Deploy ke Hostinger (Managed Node.js + MySQL)
+
+Panduan ini mengasumsikan **satu domain** melayani aplikasi, API, dan short link:
+
+```
+https://DOMAIN/                  → halaman depan
+https://DOMAIN/login             → masuk
+https://DOMAIN/dashboard         → dasbor
+https://DOMAIN/api/...           → API
+https://DOMAIN/<slug>            → redirect short link
+```
+
+Frontend dilayani Express dari hasil build `client/dist`, jadi tidak ada CORS dan cookie sesi bersifat same-origin.
+
+---
+
+## 1. Prasyarat
+
+| Kebutuhan | Keterangan |
+|---|---|
+| Plan Hostinger | Web/Cloud hosting yang mendukung **Node.js** |
+| Node.js | Minimal **20.19** (Vite 8 dan Prisma 6 mensyaratkannya) |
+| Database | MySQL dari hPanel |
+| Domain | Diarahkan ke hosting ini, SSL aktif (HTTPS) |
+
+Cek versi Node yang tersedia di hPanel. Kalau hanya tersedia Node 18, aplikasi ini **tidak akan jalan** — Vite 8 butuh ≥ 20.19.
+
+---
+
+## 2. Siapkan database
+
+Di hPanel → **Databases → MySQL Databases**:
+
+1. Buat database, misal `u123456_klik`.
+2. Buat user database dengan password kuat.
+3. Beri user itu **ALL PRIVILEGES** pada database tersebut.
+4. Catat empat nilai ini:
+
+```
+Host     : (dari hPanel, sering berupa nama host, bukan selalu "localhost")
+Port     : 3306
+Database : u123456_klik
+User     : u123456_klikuser
+Password : (password yang kamu buat)
+```
+
+> **Penting:** jangan menganggap host-nya `localhost`. Di sebagian plan Hostinger,
+> MySQL berada di host terpisah. Pakai nilai persis dari hPanel.
+
+---
+
+## 3. Hubungkan repository
+
+Di hPanel → **Website → Manage → Node.js**:
+
+| Pengaturan | Nilai |
+|---|---|
+| Repository | `https://github.com/belajareradigitalofficial/kli-k` |
+| Branch | `main` |
+| Root directory | `/` (root repo — ada `package.json` di sana) |
+| Node version | 20.19 atau lebih baru |
+
+Nama field bisa sedikit berbeda tergantung panel. Yang penting: **root directory harus di root repo**, karena `package.json` di root yang mengatur build & start.
+
+---
+
+## 4. Perintah build & start
+
+Repo ini sudah menyiapkan semuanya lewat `package.json` di root:
+
+**Build command**
+
+```
+npm run build
+```
+
+Perintah ini menjalankan:
+1. `npm ci --include=dev` di `server/` dan `client/` (dev dependency dibutuhkan untuk Prisma CLI dan Vite)
+2. `prisma generate`
+3. `vite build` → menghasilkan `client/dist`
+
+**Start command**
+
+```
+npm start
+```
+
+Menjalankan `node src/index.js` di direktori `server`.
+
+**Port:** ikuti variabel `PORT` yang disediakan Hostinger. Aplikasi sudah membaca `process.env.PORT`. Jangan hardcode `3000`.
+
+---
+
+## 5. Environment variables
+
+Isi di hPanel → **Environment Variables** (jangan mengandalkan file `.env`, yang tidak ikut ter-commit):
+
+```env
+NODE_ENV=production
+BASE_URL=https://DOMAIN
+CORS_ORIGIN=https://DOMAIN
+DATABASE_URL=mysql://USER:PASSWORD@HOST:3306/DATABASE
+SESSION_TTL_DAYS=7
+TRUST_PROXY=1
+```
+
+Penjelasan tiap variabel:
+
+| Variabel | Wajib | Fungsi |
+|---|---|---|
+| `NODE_ENV` | ✅ | `production` mengaktifkan cookie `Secure`, mematikan morgan, dan menyembunyikan detail error |
+| `BASE_URL` | ✅ | Membentuk `shortUrl`. **Harus** `https://DOMAIN`, bukan localhost |
+| `CORS_ORIGIN` | ✅ | Origin yang diizinkan untuk request bermutasi (cek CSRF). Isi `https://DOMAIN` |
+| `DATABASE_URL` | ✅ | Koneksi MySQL |
+| `SESSION_TTL_DAYS` | — | Masa berlaku login, default 7 hari |
+| `TRUST_PROXY` | — | Lihat bagian di bawah |
+
+### `TRUST_PROXY` — penting, jangan asal isi
+
+Hostinger menaruh aplikasi di belakang reverse proxy. Tanpa `TRUST_PROXY`:
+
+- `req.ip` berisi IP proxy, sehingga **semua pengunjung terlihat dari satu IP** → rate limit memblokir semua orang sekaligus, dan statistik kunjungan tidak berguna.
+
+Dengan `TRUST_PROXY` yang salah (mis. `true` tanpa proxy nyata):
+
+- Klien bisa memalsukan header `X-Forwarded-For` dan **melewati rate limit**.
+
+Cara aman menentukan nilainya:
+
+1. Coba tanpa `TRUST_PROXY` dulu.
+2. Buka `/api/health` lalu cek apakah IP pengunjung tercatat benar pada tabel `Visit` (lihat Prisma Studio atau query MySQL).
+3. Kalau semua IP sama dengan IP proxy, set `TRUST_PROXY=1`.
+4. Kalau proxy berlapis, naikkan angkanya.
+
+### Karakter khusus di `DATABASE_URL`
+
+Kalau password mengandung `@ : / ? # % &`, harus di-URL-encode:
+
+| Karakter | Encode |
+|---|---|
+| `@` | `%40` |
+| `:` | `%3A` |
+| `/` | `%2F` |
+| `?` | `%3F` |
+| `#` | `%23` |
+| `%` | `%25` |
+| `&` | `%26` |
+
+Contoh password `P@ss:w0rd` → `P%40ss%3Aw0rd`.
+
+Alternatif: pakai password alfanumerik saja agar tidak perlu encoding.
+
+---
+
+## 6. Jalankan migrasi database
+
+Setelah aplikasi pertama kali ter-deploy, tabel belum ada. Jalankan lewat SSH/terminal hPanel:
+
+```sh
+cd ~/domains/DOMAIN/public_html   # sesuaikan dengan path aplikasi di hPanel
+npm run db:deploy
+```
+
+Perintah itu menjalankan `prisma migrate deploy` — **bukan** `migrate dev`. Perbedaannya penting:
+
+| Perintah | Untuk | Aman di produksi? |
+|---|---|---|
+| `prisma migrate deploy` | Menerapkan migrasi yang sudah ada | ✅ ya |
+| `prisma migrate dev` | Membuat migrasi baru, bisa reset DB | ❌ **jangan** |
+
+Verifikasi tabel sudah ada:
+
+```sh
+cd server && npx prisma db execute --stdin <<< "SHOW TABLES;"
+```
+
+Atau buka **Prisma Studio** (butuh tunnel SSH):
+
+```sh
+cd server && npm run db:studio
+```
+
+---
+
+## 7. Checklist verifikasi
+
+Setelah deploy, uji berurutan:
+
+```sh
+# 1. API hidup
+curl -i https://DOMAIN/api/health
+# harapan: 200 {"status":"ok"}
+
+# 2. Konfigurasi benar
+curl -s https://DOMAIN/api/config
+# harapan: {"baseUrl":"https://DOMAIN"}  ← bukan localhost
+
+# 3. Halaman aplikasi
+curl -s -o /dev/null -w "%{http_code}\n" https://DOMAIN/login
+# harapan: 200
+
+# 4. Slug tidak dikenal
+curl -s -o /dev/null -w "%{http_code}\n" https://DOMAIN/slug-ngawur
+# harapan: 404 (bukan 200)
+```
+
+Lalu di browser:
+
+1. Daftar akun baru.
+2. **Refresh halaman** — kalau langsung terlempar ke login, cookie bermasalah (biasanya `NODE_ENV` belum `production` atau SSL belum aktif).
+3. Buat tautan, salin, buka di tab lain → harus redirect.
+4. Cek statistik bertambah.
+5. Logout, pastikan tidak bisa akses `/dashboard`.
+
+---
+
+## 8. Masalah yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Blank page saat buka `/login` | `client/dist` tidak ada | Cek build command berjalan; pastikan `client/dist/index.html` ada |
+| Halaman tampil tapi API 404 | Root directory salah | Pastikan root = root repo |
+| Login berhasil tapi langsung logout saat refresh | Cookie `Secure` di HTTP, atau `NODE_ENV` bukan production | Aktifkan SSL, set `NODE_ENV=production` |
+| `Can't reach database server` | `DATABASE_URL` salah host/port | Ambil ulang dari hPanel, cek encoding password |
+| `P1000 Authentication failed` | User/password DB salah, atau privilege kurang | Beri ALL PRIVILEGES pada database |
+| Semua orang kena rate limit | `TRUST_PROXY` belum di-set | Lihat bagian `TRUST_PROXY` |
+| `prisma: command not found` | Build memakai `--omit=dev` | Pastikan `npm ci --include=dev` (sudah diatur di root `package.json`) |
+| `Vite requires Node 20.19+` | Versi Node di panel terlalu lama | Ganti versi Node di hPanel |
+| Short link berbentuk `http://localhost:3000/abc` | `BASE_URL` belum diubah | Set `BASE_URL=https://DOMAIN`, restart |
+
+---
+
+## 9. Update aplikasi
+
+Setelah `git push` ke `main`, deploy ulang dari hPanel. Karena migrasi dijalankan terpisah, urutannya:
+
+```sh
+# 1. build ulang (biasanya otomatis oleh panel)
+npm run build
+
+# 2. terapkan migrasi baru kalau ada
+npm run db:deploy
+
+# 3. restart aplikasi dari hPanel
+```
+
+Selalu jalankan `db:deploy` **sebelum** restart kalau ada perubahan schema.
+
+---
+
+## 10. Yang tidak boleh dilakukan
+
+- **Jangan** commit `server/.env` — sudah masuk `.gitignore`, tapi jangan dipaksa dengan `git add -f`.
+- **Jangan** menjalankan `prisma migrate reset` di produksi — itu menghapus semua data.
+- **Jangan** set `CORS_ORIGIN=*` selama `credentials: true` — browser akan menolak, dan login tidak akan berfungsi.
+- **Jangan** biarkan `NODE_ENV=development` di produksi — cookie tidak akan `Secure` dan stack trace bisa bocor ke pengguna.

@@ -23,10 +23,11 @@ server/
 │   └── migrations/
 ├── src/
 │   ├── index.js                 # bootstrap, listen, graceful shutdown
-│   ├── app.js                   # wiring middleware + route
+│   ├── app.js                   # wiring middleware + route + frontend
 │   ├── lib/
 │   │   ├── prisma.js            # singleton PrismaClient
 │   │   ├── errors.js            # AppError
+│   │   ├── frontend.js          # penyaji client/dist + SPA fallback
 │   │   ├── session.js           # token sesi + cookie
 │   │   ├── password.js          # hash & verifikasi bcrypt
 │   │   ├── rate-limit.js        # limiter yang bisa dimatikan saat tes
@@ -44,6 +45,18 @@ server/
 │       ├── links.routes.js
 │       └── redirect.routes.js
 └── test/
+```
+
+## Deployment
+
+Panduan lengkap deploy ke Hostinger ada di **[DEPLOY.md](../DEPLOY.md)** di root repo.
+
+Ringkasnya, aplikasi ini berjalan sebagai **satu domain**: Express melayani API sekaligus hasil build frontend dari `client/dist`. Build dan start diatur oleh `package.json` di root:
+
+```sh
+npm run build     # install + prisma generate + vite build
+npm start         # node src/index.js
+npm run db:deploy # prisma migrate deploy (produksi)
 ```
 
 ## Setup
@@ -147,7 +160,7 @@ curl -i http://localhost:3000/promo
 npm test
 ```
 
-46 tes mencakup validasi URL/slug/akun, hashing password, sesi, autentikasi, CSRF, kepemilikan tautan, alias custom (buat/ubah/cek ketersediaan), redirect, dan statistik — memakai Prisma palsu sehingga tidak butuh database.
+53 tes mencakup validasi URL/slug/akun, hashing password, sesi, autentikasi, CSRF, kepemilikan tautan, alias custom (buat/ubah/cek ketersediaan), redirect, penyajian frontend, dan statistik — memakai Prisma palsu sehingga tidak butuh database.
 
 ## Scripts
 

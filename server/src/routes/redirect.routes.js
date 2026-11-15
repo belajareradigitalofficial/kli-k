@@ -18,10 +18,17 @@ export function createRedirectRouter(service, prisma) {
     message: { error: "Terlalu banyak permintaan" },
   });
 
-  router.get("/:slug", redirectLimiter, async (req, res) => {
+  router.get("/:slug", redirectLimiter, async (req, res, next) => {
     const link = await service.getBySlug(req.params.slug);
 
-    if (!link || !link.isActive) {
+    // Slug tidak ada: teruskan ke middleware berikutnya. Ini yang membuat
+    // halaman seperti /dashboard dan /login bisa dilayani frontend, dan
+    // slug yang salah ketik tetap berakhir di 404 (bukan halaman palsu).
+    if (!link) {
+      return next();
+    }
+
+    if (!link.isActive) {
       return res.status(404).json({ error: "Link tidak ditemukan" });
     }
 

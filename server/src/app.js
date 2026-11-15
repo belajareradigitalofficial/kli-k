@@ -11,8 +11,13 @@ import { createLinksRouter } from "./routes/links.routes.js";
 import { createRedirectRouter } from "./routes/redirect.routes.js";
 import { createOriginCheck, createSessionLoader } from "./middleware/auth.js";
 import { errorHandler, notFound } from "./middleware/error.js";
+import {
+  createFrontendMiddleware,
+  hasFrontendBuild,
+  resolveDistDir,
+} from "./lib/frontend.js";
 
-export function createApp({ db = prisma } = {}) {
+export function createApp({ db = prisma, serveFrontend, distDir } = {}) {
   const app = express();
 
   const authService = createAuthService(db);
@@ -70,8 +75,23 @@ export function createApp({ db = prisma } = {}) {
   app.use("/api/auth", createAuthRouter(authService));
   app.use("/api/links", createLinksRouter(linkService));
 
-  // Redirect publik paling akhir supaya /api tidak tertelan.
+  // Redirect publik. Slug yang tidak ditemukan diteruskan (next), sehingga
+  // bisa jatuh ke penyaji frontend di bawah.
   app.use("/", createRedirectRouter(linkService, db));
+
+  // Frontend (hasil build Vite). Dinyalakan kalau build tersedia, atau
+  // dipaksa lewat opsi `serveFrontend` untuk pengujian.
+  const resolvedDist = distDir ?? resolveDistDir();
+  const frontendEnabled = serveFrontend ?? hasFrontendBuild(resolvedDist);
+
+  if (frontendEnabled) {
+    app.use(createFrontendMiddleware({ distDir: resolvedDist }));
+  } else {
+    console.warn(
+      "[frontend] client/dist tidak ditemukan — hanya API yang dilayani. " +
+        "Jalankan `npm run build` di client/ untuk menyajikan antarmuka.",
+    );
+  }
 
   app.use(notFound);
   app.use(errorHandler);
