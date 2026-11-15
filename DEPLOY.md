@@ -227,6 +227,19 @@ Lalu di browser:
 | `prisma: command not found` | Build memakai `--omit=dev` | Pastikan `npm ci --include=dev` (sudah diatur di root `package.json`) |
 | `Vite requires Node 20.19+` | Versi Node di panel terlalu lama | Ganti versi Node di hPanel |
 | Short link berbentuk `http://localhost:3000/abc` | `BASE_URL` belum diubah | Set `BASE_URL=https://DOMAIN`, restart |
+| `503` + `ERR_REQUIRE_ASYNC_MODULE` di log | Passenger memuat entry file dengan `require()`; ada top-level `await` di graf ESM | Pindahkan inisialisasi async ke dalam fungsi (sudah dilakukan di `src/index.js`) |
+| `503` + `DATABASE_URL belum di-set` | Environment variable tidak sampai ke proses | Isi Environment Variables di panel, atau taruh `.env` di direktori kerja proses |
+| `ERR_TOO_MANY_REDIRECTS` | Aturan `www`/HTTPS ganda | Pilih satu bentuk kanonik domain, hapus aturan redirect yang bertentangan |
+| `503` padahal build sukses | Proses Node mati saat start | Jalankan `node server/src/index.js` manual; baca `stderr.log` di folder aplikasi |
+
+### Karakteristik hosting LiteSpeed/Passenger
+
+Beberapa hal di atas hanya berlaku untuk Hostinger (LiteSpeed Passenger), bukan VPS dengan PM2:
+
+- **Entry file dimuat dengan `require()`**, bukan `import()`. Karena itu `server/src/index.js` tidak boleh punya top-level `await`. Tes `test/startup.test.js` menjaga aturan ini.
+- **`PORT` bisa berupa path unix socket**, bukan angka. Jangan menulis `app.listen(PORT, "0.0.0.0")` — argumen kedua akan dibaca sebagai *backlog*, bukan host.
+- **Log runtime ada di folder aplikasi**, bukan di panel: `stderr.log` dan `console.log` (ditulis LiteSpeed). Lokasi aplikasi: `~/domains/DOMAIN/hbuilds/current/nodejs/`.
+- **`current` adalah symlink ke folder versi** yang dibuat ulang setiap deploy. Jangan menaruh file konfigurasi manual di dalamnya.
 
 ---
 
