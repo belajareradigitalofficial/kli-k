@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment — jangan pernah commit nilai asli
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+
+# Prisma
+prisma/*.db
+prisma/migrations/dev.db*
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

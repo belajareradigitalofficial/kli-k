@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique @db.VarChar(191)
+  name         String    @db.VarChar(100)
+  passwordHash String    @db.VarChar(255)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  links    Link[]
+  sessions Session[]
+
+  @@index([createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  // SHA-256 dari token asli. Token mentah hanya ada di cookie pengguna,
+  // jadi kalau isi database bocor, sesi tidak bisa dibajak.
+  tokenHash String   @unique @db.VarChar(64)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Link {
+  id          String    @id @default(cuid())
+  slug        String    @unique @db.VarChar(32)
+  targetUrl   String    @db.Text
+  title       String?   @db.VarChar(255)
+  description String?   @db.Text
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  clicks      Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Nullable untuk data lama yang dibuat sebelum sistem akun ada.
+  // Semua link baru wajib punya pemilik.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  visits Visit[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([isActive])
+}
+
+model Visit {
+  id        BigInt   @id @default(autoincrement())
+  linkId    String
+  ip        String?  @db.VarChar(45)
+  userAgent String?  @db.VarChar(512)
+  referer   String?  @db.VarChar(512)
+  createdAt DateTime @default(now())
+
+  link Link @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, createdAt])
+}
