@@ -26,24 +26,35 @@ export function resolveDistDir() {
 }
 
 /**
- * Menyajikan hasil build frontend: aset statis, lalu index.html untuk
- * rute aplikasi yang dikenal.
+ * Aset hasil build (js, css, favicon, …).
+ *
+ * Dipasang SEBELUM route redirect `/:slug`. Tanpa itu setiap permintaan aset
+ * menembak database lebih dulu: lambat, dan membuat seluruh situs ikut rusak
+ * ketika database bermasalah — termasuk halaman yang tidak butuh database.
+ *
+ * Aman karena slug dibatasi huruf/angka/tanda hubung, sehingga tidak mungkin
+ * bertabrakan dengan nama file.
  */
-export function createFrontendMiddleware({ distDir }) {
-  const indexHtml = path.join(distDir, "index.html");
-  const router = express.Router();
-
-  // index:false supaya "/" juga lewat handler SPA di bawah, bukan otomatis
+export function createStaticMiddleware({ distDir }) {
+  // index:false supaya "/" tetap ditangani handler SPA, bukan otomatis
   // dilayani express.static.
-  router.use(express.static(distDir, { index: false }));
+  return express.static(distDir, { index: false });
+}
 
-  router.use((req, res, next) => {
+/**
+ * Fallback SPA: kirim index.html untuk rute aplikasi yang dikenal.
+ *
+ * Dipasang SETELAH route redirect, supaya slug yang benar-benar ada tetap
+ * diarahkan ke tujuan, dan slug yang tidak ada tetap berakhir 404.
+ */
+export function createSpaFallback({ distDir }) {
+  const indexHtml = path.join(distDir, "index.html");
+
+  return function spaFallback(req, res, next) {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
     if (!isSpaPath(req.path)) return next();
     res.sendFile(indexHtml);
-  });
-
-  return router;
+  };
 }
 
 export function hasFrontendBuild(distDir = resolveDistDir()) {

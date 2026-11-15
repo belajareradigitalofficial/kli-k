@@ -89,3 +89,35 @@ test("slug tidak dikenal 404, bukan halaman aplikasi", async () => {
   assert.equal(res.status, 404);
   assert.doesNotMatch(res.headers.get("content-type") ?? "", /text\/html/);
 });
+
+// ------------------------------------------------------------ urutan route
+
+test("aset statis tidak menyentuh database", async () => {
+  // Sebelumnya /favicon.svg masuk ke route /:slug dan memicu findUnique,
+  // sehingga satu file statis bisa membuat situs 500 saat DB bermasalah.
+  const db = createFakePrisma();
+  let lookups = 0;
+  const original = db.link.findUnique;
+  db.link.findUnique = async (args) => {
+    lookups += 1;
+    return original(args);
+  };
+
+  const app = createApp({ db, serveFrontend: true, distDir });
+  const srv = app.listen(0);
+  await new Promise((r) => srv.once("listening", r));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+
+  try {
+    const res = await fetch(`${url}/assets/app.js`);
+    assert.equal(res.status, 200);
+    assert.equal(lookups, 0, "aset statis tidak boleh menembak database");
+
+    // Slug yang benar-benar ada tetap harus redirect.
+    await fetch(`${url}/ada`, { redirect: "manual" });
+    assert.equal(lookups, 1, "route /:slug tetap memeriksa database");
+  } finally {
+    srv.close();
+  }
+});
+

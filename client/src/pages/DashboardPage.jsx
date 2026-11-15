@@ -22,6 +22,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  // Pemicu muat ulang yang selalu berubah. Diperlukan karena "kembali ke
+  // halaman 1 tanpa filter" tidak mengubah state sama sekali kalau kita
+  // memang sudah di kondisi itu — tanpa ini daftar tidak pernah dimuat ulang.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -46,7 +50,10 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
+  // refreshKey sengaja jadi dependency meski tidak dipakai di dalam: nilainya
+  // berfungsi sebagai pemicu muat ulang, bukan sebagai data.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, search, refreshKey]);
 
   useEffect(() => {
     // Fetch data saat mount / filter berubah: setState baru terjadi setelah
@@ -69,10 +76,27 @@ export default function DashboardPage() {
 
   function handleCreated(link) {
     setNotice(`Tautan dibuat: ${link.shortUrl}`);
+    setSearchInput("");
     setLoading(true);
+
+    // Tampilkan seketika: sisipkan hasil create tanpa menunggu request daftar.
+    const expired = link.expiresAt ? new Date(link.expiresAt).getTime() < Date.now() : false;
+    setLinks((prev) => [{ ...link, expired }, ...prev].slice(0, PAGE_SIZE));
+    setSummary((prev) =>
+      prev
+        ? {
+            ...prev,
+            totalLinks: prev.totalLinks + 1,
+            activeLinks: prev.activeLinks + (link.isActive ? 1 : 0),
+          }
+        : prev,
+    );
+
+    // Kembali ke halaman 1 tanpa filter, lalu paksa muat ulang supaya urutan
+    // dan angka statistik tetap akurat.
     setPage(1);
     setSearch("");
-    setSearchInput("");
+    setRefreshKey((key) => key + 1);
   }
 
   async function handleToggle(link) {

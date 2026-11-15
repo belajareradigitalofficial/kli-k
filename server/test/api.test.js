@@ -2,6 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../src/app.js";
 import { createFakePrisma } from "./fake-prisma.js";
+import { createOriginCheck } from "../src/middleware/auth.js";
 
 // Banyak request dari satu IP di tes ini akan menabrak rate limiter, yang
 // tidak relevan untuk menguji logika. Limiternya dimatikan khusus di sini.
@@ -175,6 +176,63 @@ test("mutasi dengan Origin asing ditolak 403", async () => {
   });
   assert.equal(res.status, 403);
   assert.equal((await res.json()).code, "CSRF_ORIGIN_REJECTED");
+});
+
+test("origin dengan host sama tetap diterima (www, skema, port)", async () => {
+  // Perbandingan host, bukan string persis: satu perbedaan "www" tidak boleh
+  // memblokir login. Host request di sini 127.0.0.1:<port acak>.
+  const host = baseUrl.replace("http://", "");
+  const c = client();
+  await register(c);
+
+  for (const origin of [`http://${host}`, `https://${host}`]) {
+    const res = await c.req("/api/links", {
+      method: "POST",
+      body: { targetUrl: `https://example.com/${Math.random()}` },
+      origin: false,
+      headers: { Origin: origin },
+    });
+    assert.equal(res.status, 201, `origin ${origin} seharusnya diterima`);
+  }
+});
+
+test("origin www pada host yang sama tidak ditolak", () => {
+  // Meniru kasus produksi: CORS_ORIGIN hanya https://kli-k.id, tapi pengguna
+  // membuka https://www.kli-k.id. Header Host tidak bisa diatur lewat fetch,
+  // jadi middleware diuji langsung.
+  const check = createOriginCheck(["https://kli-k.id"]);
+
+  const run = (origin, host) => {
+    const req = {
+      method: "POST",
+      get: (name) => ({ origin, host })[name],
+    };
+    let error;
+    check(req, {}, (err) => {
+      error = err;
+    });
+    return error;
+  };
+
+  assert.equal(run("https://www.kli-k.id", "www.kli-k.id"), undefined);
+  assert.equal(run("https://kli-k.id", "kli-k.id"), undefined);
+  // Host sama, skema berbeda (umum di belakang reverse proxy).
+  assert.equal(run("http://kli-k.id", "kli-k.id"), undefined);
+  // Host berbeda tetap ditolak.
+  assert.equal(run("https://jahat.example", "kli-k.id")?.status, 403);
+  assert.equal(run("null", "kli-k.id")?.status, 403);
+});
+
+test("origin null (iframe sandbox) tetap ditolak", async () => {
+  const c = client();
+  await register(c);
+  const res = await c.req("/api/links", {
+    method: "POST",
+    body: { targetUrl: "https://example.com" },
+    origin: false,
+    headers: { Origin: "null" },
+  });
+  assert.equal(res.status, 403);
 });
 
 // ------------------------------------------------------------ links

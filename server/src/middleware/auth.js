@@ -38,6 +38,16 @@ export function requireAuth(req, res, next) {
  * memicu aksi atas nama pengguna (CSRF). Request tanpa header Origin
  * (curl, alat CLI) tetap diizinkan karena tidak membawa cookie browser
  * lintas situs — tapi kalau Origin ada dan tidak cocok, ditolak.
+ *
+ * Perbandingan dilakukan pada dua tingkat:
+ *
+ * 1. Daftar `CORS_ORIGIN` apa adanya — jalur eksplisit untuk origin lain
+ *    (mis. frontend Vite di port berbeda saat pengembangan).
+ * 2. Host yang sama dengan request ini. Ini menutup kasus `www` vs non-www,
+ *    perbedaan skema di belakang reverse proxy, dan port yang tidak terduga.
+ *
+ * Membandingkan host tetap aman untuk CSRF: browser selalu mengisi Host dari
+ * URL yang dibuka, dan request lintas situs membawa Origin dengan host lain.
  */
 export function createOriginCheck(allowedOrigins) {
   const allowed = new Set(allowedOrigins.filter(Boolean));
@@ -50,10 +60,29 @@ export function createOriginCheck(allowedOrigins) {
     const origin = req.get("origin");
     if (!origin) return next();
 
-    if (!allowed.has(origin)) {
-      return next(new AppError(403, "Origin tidak diizinkan", "CSRF_ORIGIN_REJECTED"));
+    if (allowed.has(origin)) return next();
+
+    if (isSameHost(origin, req.get("host"))) return next();
+
+    // Dicatat tanpa header cookie/body, supaya penyebab penolakan bisa
+    // ditelusuri tanpa menebak-nebak.
+    if (process.env.NODE_ENV !== "test") {
+      console.warn(
+        `[csrf] Origin ditolak: ${origin} (Host: ${req.get("host") ?? "-"}). ` +
+          `CORS_ORIGIN saat ini: ${[...allowed].join(", ") || "(kosong)"}`,
+      );
     }
 
-    next();
+    return next(new AppError(403, "Origin tidak diizinkan", "CSRF_ORIGIN_REJECTED"));
   };
+}
+
+function isSameHost(origin, host) {
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    // Origin tidak bisa diurai (mis. "null" dari iframe sandbox).
+    return false;
+  }
 }
