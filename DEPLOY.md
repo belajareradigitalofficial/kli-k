@@ -150,6 +150,19 @@ Contoh password `P@ss:w0rd` → `P%40ss%3Aw0rd`.
 
 Alternatif: pakai password alfanumerik saja agar tidak perlu encoding.
 
+### `.env` dibuat otomatis saat build
+
+Beberapa plan Hostinger hanya menyuntikkan environment variable pada tahap **build**, bukan saat aplikasi dijalankan. Gejalanya: build sukses, tapi aplikasi langsung mati dengan `DATABASE_URL belum di-set`.
+
+Karena itu langkah terakhir `npm run build` menjalankan `scripts/write-env.mjs`, yang menyalin variabel dari panel ke `.env` di root repo. File itu menjadi direktori kerja proses di produksi, jadi `dotenv` bisa membacanya.
+
+Yang perlu diketahui:
+
+- `PORT` **tidak** disalin. Passenger memberi `PORT` sendiri (bisa berupa path unix socket); nilai dari panel akan merusaknya.
+- Kalau variabel tidak terlihat saat build, skrip hanya memberi peringatan dan tidak membuat file — build tetap sukses.
+- Nilai yang sudah ada di environment runtime tetap menang, karena `dotenv` tidak menimpa variabel yang sudah ter-set.
+- File dibuat dengan permission `600` dan tidak pernah masuk git (`.gitignore`).
+
 ---
 
 ## 6. Jalankan migrasi database
