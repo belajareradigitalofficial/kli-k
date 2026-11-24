@@ -385,19 +385,28 @@ export function escapeHtml(value) {
 
 /**
  * HTML tipis untuk crawler. Pengunjung biasa tidak pernah melihat ini karena
- * mereka tetap mendapat 302; `<meta refresh>` hanya jaring pengaman kalau
- * ternyata ada manusia yang sampai ke sini.
+ * mereka tetap mendapat 302.
+ *
+ * Sengaja TANPA `<meta http-equiv="refresh">` dan TANPA
+ * `<meta name="robots" content="noindex">`:
+ * - Crawler WhatsApp (turunan crawler Facebook) mengikuti meta refresh, lalu
+ *   pindah ke situs tujuan dan mengabaikan OG yang kita sajikan — preview jadi
+ *   kosong. Halaman ini memang hanya untuk crawler, jadi tidak butuh redirect.
+ * - Googlebot tidak pernah sampai ke sini (dia bukan crawler preview dan
+ *   mendapat 302), sehingga `noindex` tidak ada gunanya; sebagian scraper
+ *   justru melewati halaman ber-`noindex` saat membuat preview.
  */
-export function renderOgHtml({ link, og, canonicalUrl }) {
+export function renderOgHtml({ link, og, canonicalUrl, imageUrl }) {
   const title = link.title || og?.title || link.targetUrl;
   const description = link.description || og?.description || null;
-  const image = og?.image || null;
+  // imageUrl memungkinkan pemanggil menyajikan gambar lewat domain sendiri
+  // (/og-image/:slug) supaya crawler tidak perlu menjangkau domain lain.
+  const image = imageUrl || og?.image || null;
 
   const tags = [
     `<meta charset="utf-8">`,
     `<meta name="viewport" content="width=device-width, initial-scale=1">`,
     `<title>${escapeHtml(title)}</title>`,
-    `<meta name="robots" content="noindex, nofollow">`,
     `<link rel="canonical" href="${escapeHtml(canonicalUrl)}">`,
     `<meta property="og:type" content="website">`,
     `<meta property="og:url" content="${escapeHtml(canonicalUrl)}">`,
@@ -416,10 +425,6 @@ export function renderOgHtml({ link, og, canonicalUrl }) {
   if (image) {
     tags.push(`<meta property="og:image" content="${escapeHtml(image)}">`);
     tags.push(`<meta property="og:image:alt" content="${escapeHtml(title)}">`);
-    if (og.imageWidth && og.imageHeight) {
-      tags.push(`<meta property="og:image:width" content="${og.imageWidth}">`);
-      tags.push(`<meta property="og:image:height" content="${og.imageHeight}">`);
-    }
     tags.push(`<meta name="twitter:card" content="summary_large_image">`);
     tags.push(`<meta name="twitter:image" content="${escapeHtml(image)}">`);
   } else {
@@ -429,10 +434,7 @@ export function renderOgHtml({ link, og, canonicalUrl }) {
   tags.push(`<meta name="twitter:title" content="${escapeHtml(title)}">`);
   if (description) tags.push(`<meta name="twitter:description" content="${escapeHtml(description)}">`);
 
-  // Jaring pengaman: kalau ada manusia yang membuka HTML ini, dia tetap
-  // dibawa ke tujuan. Crawler mengabaikan meta refresh.
   const target = escapeHtml(link.targetUrl);
-  tags.push(`<meta http-equiv="refresh" content="0;url=${target}">`);
 
   return `<!doctype html>
 <html lang="id">
@@ -440,7 +442,7 @@ export function renderOgHtml({ link, og, canonicalUrl }) {
 ${tags.join("\n")}
 </head>
 <body>
-<p>Mengalihkan ke <a href="${target}">${escapeHtml(link.targetUrl)}</a>…</p>
+<p>Buka tautan tujuan: <a href="${target}">${target}</a></p>
 </body>
 </html>`;
 }
@@ -449,7 +451,7 @@ ${tags.join("\n")}
 export function renderUnavailableHtml(message) {
   return `<!doctype html>
 <html lang="id">
-<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>${escapeHtml(message)}</title></head>
+<head><meta charset="utf-8"><title>${escapeHtml(message)}</title></head>
 <body><p>${escapeHtml(message)}</p></body>
 </html>`;
 }

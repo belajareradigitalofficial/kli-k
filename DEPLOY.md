@@ -227,7 +227,11 @@ curl -s -o /dev/null -w "%{http_code}\n" https://DOMAIN/slug-ngawur
 # 5. Preview OG untuk crawler media sosial (pakai slug yang benar-benar ada)
 curl -s -A "WhatsApp/2.23.20.0 A" https://DOMAIN/SLUG | grep -E "og:(title|image)"
 # harapan: 200 + tag og:title/og:image milik situs tujuan
-# kalau kosong / malah 302: server tidak bisa menjangkau situs tujuan (lihat §8)
+# og:image harus menunjuk ke https://DOMAIN/og-image/SLUG
+
+# 6. Proxy gambar OG
+curl -s -o /dev/null -w "%{http_code} %{content_type}\n" https://DOMAIN/og-image/SLUG
+# harapan: 200 image/jpeg (atau 302 ke gambar asli kalau gagal mengambil)
 ```
 
 Lalu di browser:
@@ -259,6 +263,12 @@ Yang perlu diketahui:
    ingin teks preview berbeda dari halaman tujuan.
 6. Gambar mengikuti situs tujuan; kalau tujuan tidak punya `og:image`, preview
    tampil tanpa gambar (tidak ada gambar pengganti).
+7. **Gambar disajikan lewat `https://DOMAIN/og-image/SLUG`.** Server mengambil
+   gambar asli sekali, menyimpannya di memori (1 jam), lalu meneruskannya.
+   Tujuannya agar crawler WhatsApp hanya perlu menjangkau `DOMAIN`; sebagian
+   situs memblokir alamat IP crawler Meta sehingga gambar tidak pernah sampai.
+   Kalau pengambilan gagal, endpoint membalas `302` ke URL gambar asli sebagai
+   jalan mundur.
 7. WhatsApp meng-cache preview per URL. Untuk memaksa refresh, pakai slug baru
    atau tambahkan `?v=2` saat membagikan.
 8. Crawler **tidak** dihitung sebagai klik.

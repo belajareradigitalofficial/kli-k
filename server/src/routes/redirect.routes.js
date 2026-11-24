@@ -137,6 +137,11 @@ async function sendPreview({ res, link, ogService, baseUrl }) {
   const origin = (baseUrl ?? process.env.BASE_URL ?? "").replace(/\/+$/, "");
   const canonicalUrl = origin ? `${origin}/${link.slug}` : `/${link.slug}`;
 
+  // Gambar disajikan lewat domain sendiri kalau sumbernya diketahui. Dengan
+  // begitu crawler WhatsApp hanya perlu menjangkau kli-k.id; sebagian situs
+  // memblokir alamat IP crawler Meta sehingga gambar tidak pernah sampai.
+  const imageUrl = og?.image && origin ? `${origin}/og-image/${link.slug}` : null;
+
   // HTML ini hanya untuk crawler. `private` mencegah CDN/reverse proxy
   // menyimpannya — kalau ikut ter-cache, pengunjung biasa akan menerima
   // halaman ini alih-alih 302 (pernah terjadi di Hostinger: CDN meng-cache
@@ -148,8 +153,7 @@ async function sendPreview({ res, link, ogService, baseUrl }) {
   // situs tujuan.
   res.set("Cache-Control", "private, no-store, max-age=0");
   res.vary("User-Agent");
-  res.set("X-Robots-Tag", "noindex");
-  res.status(200).type("html").send(renderOgHtml({ link, og, canonicalUrl }));
+  res.status(200).type("html").send(renderOgHtml({ link, og, canonicalUrl, imageUrl }));
   return true;
 }
 

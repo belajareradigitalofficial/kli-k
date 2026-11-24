@@ -9,6 +9,7 @@ import { createLinkService } from "./services/link.service.js";
 import { createOgService } from "./services/og.service.js";
 import { createAuthRouter } from "./routes/auth.routes.js";
 import { createLinksRouter } from "./routes/links.routes.js";
+import { createOgImageRouter } from "./routes/og-image.routes.js";
 import { createRedirectRouter } from "./routes/redirect.routes.js";
 import { createOriginCheck, createSessionLoader } from "./middleware/auth.js";
 import { errorHandler, notFound } from "./middleware/error.js";
@@ -106,9 +107,14 @@ export function createApp({ db = prisma, serveFrontend, distDir, ogService, ogFe
   // Dipasang sebelum route redirect supaya tidak menembak database.
   app.use(createStaticFileGuard());
 
+  // Proxy gambar OG. Dipasang sebelum route redirect karena /og-image/<slug>
+  // punya dua segmen — tanpa ini pun tidak akan tertangkap /:slug, tapi urutan
+  // ini membuat maksudnya jelas dan aman kalau path berubah.
+  app.use("/og-image", createOgImageRouter(linkService, ogFetch));
+
   // Redirect publik. Slug yang tidak ditemukan diteruskan (next), sehingga
   // bisa jatuh ke fallback SPA di bawah. Slug yang ada tetap 302.
-  app.use("/", createRedirectRouter(linkService, db, { ogService: previewService }));
+  app.use("/", createRedirectRouter(linkService, db, { ogService: previewService, ogFetch }));
 
   if (frontendEnabled) {
     app.use(createSpaFallback({ distDir: resolvedDist }));

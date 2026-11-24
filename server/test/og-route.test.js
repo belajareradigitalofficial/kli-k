@@ -17,6 +17,16 @@ const lookup = async () => [{ address: "8.8.8.8", family: 4 }];
 function targetFetch({ html, calls }) {
   return async (url, init) => {
     calls.push({ url, init });
+
+    // Gambar OG dari CDN: balas byte gambar palsu.
+    if (url.startsWith("https://cdn.tujuan.com/")) {
+      if (url.includes("gagal")) throw new Error("gambar tidak bisa diambil");
+      return new Response(Buffer.from([0xff, 0xd8, 0xff, 0xd9]), {
+        status: 200,
+        headers: { "content-type": "image/jpeg", "content-length": "4" },
+      });
+    }
+
     if (!html || !url.startsWith("https://tujuan.com/")) {
       throw new Error("koneksi ditolak");
     }
@@ -80,10 +90,109 @@ test("crawler WhatsApp mendapat HTML OG dari halaman tujuan", async () => {
 
   const html = await res.text();
   assert.match(html, /<meta property="og:title" content="Promo Akhir Tahun">/);
-  assert.match(html, /<meta property="og:image" content="https:\/\/cdn\.tujuan\.com\/promo\.png">/);
   assert.match(html, /<meta property="og:description" content="Diskon sampai 70%">/);
   assert.match(html, /<meta property="og:site_name" content="Toko Tujuan">/);
   assert.match(html, /<meta property="og:url" content="https:\/\/kli-k\.id\/promo">/);
+
+  // Gambar disajikan lewat domain sendiri supaya crawler tidak perlu
+  // menjangkau CDN pihak ketiga.
+  assert.match(html, /<meta property="og:image" content="https:\/\/kli-k\.id\/og-image\/promo">/);
+});
+
+test("HTML preview tidak memuat meta refresh dan noindex", async () => {
+  // Keduanya pernah membuat WhatsApp mengabaikan OG: meta refresh membuat
+  // crawler pindah ke situs tujuan, dan sebagian scraper melewati halaman
+  // ber-noindex.
+  const res = await get("/promo", WA_UA);
+  const html = await res.text();
+
+  assert.doesNotMatch(html, /http-equiv="refresh"/i);
+  assert.doesNotMatch(html, /name="robots"/i);
+});
+
+test("proxy gambar OG meneruskan byte gambar", async () => {
+  const res = await get("/og-image/promo", WA_UA);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") ?? "", /image\/jpeg/);
+
+  const bytes = Buffer.from(await res.arrayBuffer());
+  assert.deepEqual([...bytes], [0xff, 0xd8, 0xff, 0xd9]);
+});
+
+test("proxy gambar OG: slug tidak dikenal diteruskan ke 404", async () => {
+  const res = await get("/og-image/tidak-ada", WA_UA);
+  assert.equal(res.status, 404);
+});
+
+test("proxy gambar OG: gagal mengambil gambar jatuh ke 302 sumber", async () => {
+  const db4 = createFakePrisma();
+  await db4.link.create({
+    data: {
+      slug: "rusak",
+      targetUrl: "https://tujuan.com/rusak",
+      ogImage: "https://cdn.tujuan.com/gagal.png",
+      ogFetchedAt: new Date(),
+      userId: "user_1",
+    },
+  });
+
+  const app = createApp({
+    db: db4,
+    serveFrontend: false,
+    ogFetch: { fetchImpl: targetFetch({ html: TARGET_HTML, calls: [] }), lookup },
+  });
+
+  const srv = app.listen(0);
+  await new Promise((r) => srv.once("listening", r));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+
+  try {
+    const res = await fetch(`${url}/og-image/rusak`, { redirect: "manual" });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get("location"), "https://cdn.tujuan.com/gagal.png");
+  } finally {
+    srv.close();
+  }
+});
+
+test("proxy gambar OG tidak mau mengambil alamat internal", async () => {
+  // URL gambar berasal dari HTML pihak ketiga, jadi bisa saja menunjuk ke
+  // 127.0.0.1. Endpoint ini tidak boleh menjadi jembatan ke jaringan internal.
+  const db5 = createFakePrisma();
+  await db5.link.create({
+    data: {
+      slug: "ssrf",
+      targetUrl: "https://tujuan.com/ssrf",
+      ogImage: "http://169.254.169.254/latest/meta-data/",
+      ogFetchedAt: new Date(),
+      userId: "user_1",
+    },
+  });
+
+  let fetched = 0;
+  const app = createApp({
+    db: db5,
+    serveFrontend: false,
+    ogFetch: {
+      fetchImpl: async () => {
+        fetched += 1;
+        throw new Error("tidak boleh dipanggil");
+      },
+      lookup,
+    },
+  });
+
+  const srv = app.listen(0);
+  await new Promise((r) => srv.once("listening", r));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+
+  try {
+    const res = await fetch(`${url}/og-image/ssrf`, { redirect: "manual" });
+    assert.equal(res.status, 302);
+    assert.equal(fetched, 0, "alamat internal tidak boleh di-fetch");
+  } finally {
+    srv.close();
+  }
 });
 
 test("HTML preview tidak boleh di-cache bersama (CDN/proxy)", async () => {

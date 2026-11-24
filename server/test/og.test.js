@@ -303,6 +303,29 @@ test("renderOgHtml: meta OG memakai data tujuan dan teks link menang", () => {
   assert.match(html, /twitter:card" content="summary_large_image"/);
 });
 
+test("renderOgHtml: imageUrl menimpa gambar asal (proxy same-origin)", () => {
+  const html = renderOgHtml({
+    link: { slug: "promo", targetUrl: "https://tujuan.com/promo", title: null, description: null },
+    og: { title: "Tujuan", description: null, image: "https://cdn.tujuan.com/a.png", siteName: null },
+    canonicalUrl: "https://kli-k.id/promo",
+    imageUrl: "https://kli-k.id/og-image/promo",
+  });
+
+  assert.match(html, /og:image" content="https:\/\/kli-k\.id\/og-image\/promo"/);
+  assert.doesNotMatch(html, /cdn\.tujuan\.com/);
+});
+
+test("renderOgHtml: tanpa meta refresh dan tanpa noindex", () => {
+  const html = renderOgHtml({
+    link: { slug: "promo", targetUrl: "https://tujuan.com/promo", title: null, description: null },
+    og: { title: "Tujuan", description: null, image: null, siteName: null },
+    canonicalUrl: "https://kli-k.id/promo",
+  });
+
+  assert.doesNotMatch(html, /http-equiv="refresh"/i);
+  assert.doesNotMatch(html, /name="robots"/i);
+});
+
 test("renderOgHtml: tanpa gambar tetap valid dan tanpa tag og:image", () => {
   const html = renderOgHtml({
     link: { slug: "promo", targetUrl: "https://tujuan.com/promo", title: null, description: null },
