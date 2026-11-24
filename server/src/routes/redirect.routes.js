@@ -57,14 +57,15 @@ export function createRedirectRouter(service, prisma, { ogService, baseUrl } = {
       return next();
     }
 
-    const crawler = isCrawler(req.get("user-agent"));
+    const userAgent = req.get("user-agent") ?? "";
+    const crawler = isCrawler(userAgent);
 
-    // Jejak kecil untuk mendiagnosis preview yang tidak muncul: kalau baris ini
-    // TIDAK pernah muncul saat link dibagikan, berarti crawler tidak sampai ke
-    // server (biasanya karena cache WhatsApp atau URL dianggap sudah dikenal).
-    if (crawler) {
-      console.log(`[og] crawler ${req.get("user-agent")} → /${req.params.slug}`);
-    }
+    // Jejak diagnosis preview. Dicatat untuk SEMUA User-Agent yang membuka slug
+    // yang benar-benar ada — bukan hanya yang cocok dengan daftar crawler.
+    // Kalau WhatsApp ternyata memakai UA yang belum terdaftar, dia tetap muncul
+    // di sini (dan mendapat 302 seperti pengunjung biasa). Tanpa baris ini kita
+    // buta terhadap UA baru: request-nya tidak meninggalkan jejak apa pun.
+    logRequest(`[slug] /${req.params.slug} ua="${truncate(userAgent, MAX_HEADER_LENGTH)}" crawler=${crawler}`);
 
     if (!link.isActive) {
       if (crawler) {
@@ -178,4 +179,13 @@ async function recordVisit(prisma, linkId, req) {
 function truncate(value, max) {
   if (typeof value !== "string") return null;
   return value.length > max ? value.slice(0, max) : value;
+}
+
+/**
+ * Log diagnostik request publik. Dimatikan saat tes supaya keluaran tes tetap
+ * bersih; di produksi tiap kunjungan ke slug yang ada menghasilkan satu baris.
+ */
+function logRequest(message) {
+  if (process.env.NODE_ENV === "test") return;
+  console.log(message);
 }

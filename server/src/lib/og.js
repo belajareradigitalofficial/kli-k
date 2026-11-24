@@ -17,6 +17,10 @@ const CRAWLER_PATTERNS = [
   /whatsapp/i,
   /facebookexternalhit/i,
   /facebot/i,
+  // Meta memakai ExternalAgent untuk mengambil preview tautan (Facebook,
+  // Messenger, dan WhatsApp). Sejak 2024 UA ini menggantikan sebagian peran
+  // facebookexternalhit; tanpa pola ini request-nya hanya dapat 302.
+  /meta-externalagent/i,
   /twitterbot/i,
   /telegrambot/i,
   /slackbot/i,

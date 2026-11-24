@@ -35,9 +35,13 @@ export function createApp({ db = prisma, serveFrontend, distDir, ogService, ogFe
 
   // trust proxy hanya kalau diminta eksplisit: nilai "1" adalah string di env,
   // Express butuh angka atau boolean agar tidak salah tafsir.
-  if (process.env.TRUST_PROXY) {
-    const raw = process.env.TRUST_PROXY;
-    app.set("trust proxy", raw === "true" ? true : /^\d+$/.test(raw) ? Number(raw) : raw);
+  const trustProxyRaw = process.env.TRUST_PROXY;
+  let trustProxy = false;
+
+  if (trustProxyRaw) {
+    trustProxy =
+      trustProxyRaw === "true" ? true : /^\d+$/.test(trustProxyRaw) ? Number(trustProxyRaw) : trustProxyRaw;
+    app.set("trust proxy", trustProxy);
   } else if (process.env.NODE_ENV === "production") {
     // Hostinger selalu mengirim X-Forwarded-For. Tanpa trust proxy, req.ip
     // berisi IP proxy: rate limit jadi satu kuota untuk semua pengunjung dan
@@ -45,6 +49,21 @@ export function createApp({ db = prisma, serveFrontend, distDir, ogService, ogFe
     console.warn(
       "[config] TRUST_PROXY belum di-set. Di belakang CDN/reverse proxy " +
         "(Hostinger), set TRUST_PROXY=1 agar IP pengunjung terbaca benar.",
+    );
+  }
+
+  // Bukti positif saat startup. Sebelum ini satu-satunya petunjuk "env terbaca"
+  // adalah hilangnya warning di atas, dan itu mudah disalahartikan sebagai
+  // "log tidak bertambah" — padahal di produksi request biasa memang tidak
+  // dicatat. Nilai rahasia tidak pernah dicetak, hanya status set/tidak.
+  if (process.env.NODE_ENV !== "test") {
+    console.log(
+      `[config] trust proxy=${trustProxy} | NODE_ENV=${process.env.NODE_ENV || "-"} ` +
+        `BASE_URL=${process.env.BASE_URL ? "set" : "-"} ` +
+        `CORS_ORIGIN=${process.env.CORS_ORIGIN ? "set" : "-"} ` +
+        `DATABASE_URL=${process.env.DATABASE_URL ? "set" : "-"} ` +
+        `SESSION_TTL_DAYS=${process.env.SESSION_TTL_DAYS ? "set" : "-"} ` +
+        `TRUST_PROXY=${trustProxyRaw || "-"}`,
     );
   }
 

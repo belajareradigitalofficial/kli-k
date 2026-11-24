@@ -9,6 +9,7 @@ process.env.NODE_ENV = "test";
 process.env.BASE_URL = "https://kli-k.id";
 
 const WA_UA = "WhatsApp/2.23.20.0 A";
+const META_UA = "meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)";
 const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120 Safari/537.36";
 
 const lookup = async () => [{ address: "8.8.8.8", family: 4 }];
@@ -96,6 +97,18 @@ test("crawler WhatsApp mendapat HTML OG dari halaman tujuan", async () => {
 
   // Gambar disajikan lewat domain sendiri supaya crawler tidak perlu
   // menjangkau CDN pihak ketiga.
+  assert.match(html, /<meta property="og:image" content="https:\/\/kli-k\.id\/og-image\/promo">/);
+});
+
+test("crawler Meta ExternalAgent juga mendapat HTML OG", async () => {
+  // UA ini yang dipakai Meta (Facebook/Messenger/WhatsApp) untuk preview sejak
+  // 2024. Sebelum dikenali, request-nya hanya dapat 302.
+  const res = await get("/promo", META_UA);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type"), /text\/html/);
+
+  const html = await res.text();
+  assert.match(html, /<meta property="og:title" content="Promo Akhir Tahun">/);
   assert.match(html, /<meta property="og:image" content="https:\/\/kli-k\.id\/og-image\/promo">/);
 });
 

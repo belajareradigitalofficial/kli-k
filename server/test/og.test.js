@@ -15,7 +15,9 @@ import {
 test("isCrawler: bot media sosial dikenali", () => {
   const uas = [
     "WhatsApp/2.23.20.0 A",
+    "WhatsApp/2.24.1.0 A",
     "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+    "meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)",
     "Facebot",
     "Twitterbot/1.0",
     "TelegramBot (like TwitterBot)",
