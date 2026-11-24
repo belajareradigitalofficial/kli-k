@@ -114,6 +114,8 @@ Penjelasan tiap variabel:
 | `DATABASE_URL` | ✅ | Koneksi MySQL |
 | `SESSION_TTL_DAYS` | — | Masa berlaku login, default 7 hari |
 | `TRUST_PROXY` | — | Lihat bagian di bawah |
+| `OG_FETCH_TIMEOUT_MS` | — | Batas waktu mengambil preview OG dari situs tujuan, default `5000` |
+| `OG_CACHE_TTL_HOURS` | — | Umur cache preview OG, default `168` (7 hari) |
 
 ### `TRUST_PROXY` — penting, jangan asal isi
 
@@ -215,6 +217,11 @@ curl -s -o /dev/null -w "%{http_code}\n" https://DOMAIN/login
 # 4. Slug tidak dikenal
 curl -s -o /dev/null -w "%{http_code}\n" https://DOMAIN/slug-ngawur
 # harapan: 404 (bukan 200)
+
+# 5. Preview OG untuk crawler media sosial (pakai slug yang benar-benar ada)
+curl -s -A "WhatsApp/2.23.20.0 A" https://DOMAIN/SLUG | grep -E "og:(title|image)"
+# harapan: 200 + tag og:title/og:image milik situs tujuan
+# kalau kosong / malah 302: server tidak bisa menjangkau situs tujuan (lihat §8)
 ```
 
 Lalu di browser:
@@ -224,6 +231,31 @@ Lalu di browser:
 3. Buat tautan, salin, buka di tab lain → harus redirect.
 4. Cek statistik bertambah.
 5. Logout, pastikan tidak bisa akses `/dashboard`.
+
+### Preview link di WhatsApp / Telegram
+
+Saat short link dibagikan, crawler WhatsApp meminta `https://DOMAIN/SLUG`. Server
+mendeteksi bot tersebut lalu **mengambil halaman tujuan** dan menyajikan HTML
+tipis berisi `og:title`, `og:description`, dan `og:image` milik situs tujuan.
+Pengunjung biasa tidak terpengaruh: mereka tetap mendapat `302` langsung ke
+tujuan, dan HTML preview tidak pernah terlihat.
+
+Yang perlu diketahui:
+
+1. **Hosting harus bisa melakukan outbound HTTPS.** Kalau diblokir, preview jatuh
+   ke perilaku lama (crawler mengambil sendiri dari situs tujuan).
+2. **Hasil disimpan 7 hari** di kolom `og*` tabel `Link` (atur lewat
+   `OG_CACHE_TTL_HOURS`). Kegagalan disimpan 1 jam supaya situs yang mati tidak
+   dihantam terus.
+3. **Ganti `targetUrl` otomatis mengosongkan cache.** Ganti judul/deskripsi tidak.
+4. **`BASE_URL` wajib benar**, karena dipakai sebagai `og:url`.
+5. **Judul/deskripsi manual di form menang** atas hasil scrape — pakai itu kalau
+   ingin teks preview berbeda dari halaman tujuan.
+6. Gambar mengikuti situs tujuan; kalau tujuan tidak punya `og:image`, preview
+   tampil tanpa gambar (tidak ada gambar pengganti).
+7. WhatsApp meng-cache preview per URL. Untuk memaksa refresh, pakai slug baru
+   atau tambahkan `?v=2` saat membagikan.
+8. Crawler **tidak** dihitung sebagai klik.
 
 ---
 
@@ -243,6 +275,7 @@ Lalu di browser:
 | `503` + `ERR_REQUIRE_ASYNC_MODULE` di log | Passenger memuat entry file dengan `require()`; ada top-level `await` di graf ESM | Pindahkan inisialisasi async ke dalam fungsi (sudah dilakukan di `src/index.js`) |
 | `503` + `DATABASE_URL belum di-set` | Environment variable tidak sampai ke proses | Isi Environment Variables di panel, atau taruh `.env` di direktori kerja proses |
 | `ERR_TOO_MANY_REDIRECTS` | Aturan `www`/HTTPS ganda | Pilih satu bentuk kanonik domain, hapus aturan redirect yang bertentangan |
+| Preview WhatsApp kosong, padahal link jalan | Server tidak bisa menjangkau situs tujuan (outbound diblokir), situs memblokir bot, atau tidak punya `og:image` | Cek `curl -A "WhatsApp/..." https://DOMAIN/SLUG`; lihat log `[og] gagal mengambil OG ...`; pastikan hosting mengizinkan outbound HTTPS |
 | `503` padahal build sukses | Proses Node mati saat start | Jalankan `node server/src/index.js` manual; baca `stderr.log` di folder aplikasi |
 
 ### Karakteristik hosting LiteSpeed/Passenger

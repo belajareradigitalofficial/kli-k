@@ -98,6 +98,16 @@ export function createLinkService(db) {
     const payload = { ...data };
     if (payload.targetUrl) {
       payload.targetUrl = validateTargetUrl(payload.targetUrl);
+
+      // Preview OG mengikuti halaman tujuan: kalau tujuannya berubah, cache
+      // lama tidak berlaku lagi dan harus diambil ulang saat share berikutnya.
+      if (payload.targetUrl !== current.targetUrl) {
+        payload.ogTitle = null;
+        payload.ogDescription = null;
+        payload.ogImage = null;
+        payload.ogSiteName = null;
+        payload.ogFetchedAt = null;
+      }
     }
 
     if ("slug" in payload) {

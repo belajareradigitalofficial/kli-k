@@ -48,6 +48,15 @@ model Link {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  // Cache Open Graph dari halaman tujuan, diisi saat crawler media sosial
+  // (WhatsApp, Telegram, …) meminta preview. Disimpan supaya setiap share
+  // tidak memicu fetch ke situs luar. ogFetchedAt null = belum pernah/gugur.
+  ogTitle       String?   @db.VarChar(255)
+  ogDescription String?   @db.Text
+  ogImage       String?   @db.Text
+  ogSiteName    String?   @db.VarChar(100)
+  ogFetchedAt   DateTime?
+
   // Nullable untuk data lama yang dibuat sebelum sistem akun ada.
   // Semua link baru wajib punya pemilik.
   userId String?

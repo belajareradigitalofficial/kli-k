@@ -28,6 +28,7 @@ server/
 │   │   ├── prisma.js            # singleton PrismaClient
 │   │   ├── errors.js            # AppError
 │   │   ├── frontend.js          # penyaji client/dist + SPA fallback
+│   │   ├── og.js                # scrape Open Graph + guard SSRF + HTML preview
 │   │   ├── session.js           # token sesi + cookie
 │   │   ├── password.js          # hash & verifikasi bcrypt
 │   │   ├── rate-limit.js        # limiter yang bisa dimatikan saat tes
@@ -39,7 +40,8 @@ server/
 │   │   └── error.js             # 404 + error handler
 │   ├── services/
 │   │   ├── auth.service.js
-│   │   └── link.service.js
+│   │   ├── link.service.js
+│   │   └── og.service.js        # cache metadata OG per link
 │   └── routes/
 │       ├── auth.routes.js
 │       ├── links.routes.js
@@ -74,7 +76,7 @@ npm run dev               # http://localhost:3000
 |---|---|
 | `User` | Akun: email unik, nama, hash password |
 | `Session` | Sesi login. Yang disimpan hanya **hash SHA-256** dari token |
-| `Link` | Tautan pendek, terhubung ke pemilik (`userId`) |
+| `Link` | Tautan pendek, terhubung ke pemilik (`userId`). Kolom `og*` menyimpan cache preview dari halaman tujuan |
 | `Visit` | Catatan kunjungan: IP, user-agent, referer |
 
 `Link.userId` nullable hanya untuk kompatibilitas data lama. Semua link baru wajib punya pemilik.
@@ -90,7 +92,7 @@ npm run dev               # http://localhost:3000
 | `POST` | `/api/auth/logout` | Keluar, sesi dihapus dari database |
 | `GET` | `/api/health` | Health check |
 | `GET` | `/api/config` | Base URL untuk preview alamat pendek |
-| `GET` | `/:slug` | Redirect `302` ke tujuan |
+| `GET` | `/:slug` | Redirect `302` ke tujuan; crawler media sosial mendapat HTML `og:*` |
 
 ### Perlu login (cookie sesi)
 

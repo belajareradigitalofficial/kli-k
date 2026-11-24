@@ -6,6 +6,7 @@ import { createLimiter } from "./lib/rate-limit.js";
 import { prisma } from "./lib/prisma.js";
 import { createAuthService } from "./services/auth.service.js";
 import { createLinkService } from "./services/link.service.js";
+import { createOgService } from "./services/og.service.js";
 import { createAuthRouter } from "./routes/auth.routes.js";
 import { createLinksRouter } from "./routes/links.routes.js";
 import { createRedirectRouter } from "./routes/redirect.routes.js";
@@ -18,11 +19,12 @@ import {
   resolveDistDir,
 } from "./lib/frontend.js";
 
-export function createApp({ db = prisma, serveFrontend, distDir } = {}) {
+export function createApp({ db = prisma, serveFrontend, distDir, ogService, ogFetch } = {}) {
   const app = express();
 
   const authService = createAuthService(db);
   const linkService = createLinkService(db);
+  const previewService = ogService ?? createOgService(db, ogFetch);
 
   const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
     .split(",")
@@ -93,7 +95,7 @@ export function createApp({ db = prisma, serveFrontend, distDir } = {}) {
 
   // Redirect publik. Slug yang tidak ditemukan diteruskan (next), sehingga
   // bisa jatuh ke fallback SPA di bawah. Slug yang ada tetap 302.
-  app.use("/", createRedirectRouter(linkService, db));
+  app.use("/", createRedirectRouter(linkService, db, { ogService: previewService }));
 
   if (frontendEnabled) {
     app.use(createSpaFallback({ distDir: resolvedDist }));

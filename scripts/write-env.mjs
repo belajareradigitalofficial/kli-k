@@ -25,6 +25,8 @@ const ALLOWED = [
   "SESSION_TTL_DAYS",
   "TRUST_PROXY",
   "RATE_LIMIT_DISABLED",
+  "OG_FETCH_TIMEOUT_MS",
+  "OG_CACHE_TTL_HOURS",
 ];
 
 const target = path.resolve(import.meta.dirname, "../.env");
