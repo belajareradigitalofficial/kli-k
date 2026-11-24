@@ -267,6 +267,11 @@ Yang perlu diketahui:
    menghasilkan HTML untuk crawler dan `302` untuk pengunjung. Kalau CDN
    menyimpan versi crawler, pengunjung biasa akan melihat halaman
    "Mengalihkan ke …" alih-alih langsung dialihkan.
+10. **Crawler dibebaskan dari rate limit.** WhatsApp menyimpan hasil fetch yang
+    gagal, jadi satu balasan `429` membuat gambar link tersebut tidak muncul
+    lagi meski kuota sudah pulih. Setiap permintaan crawler dicatat di log
+    sebagai `[og] crawler <user-agent> → /<slug>` — berguna untuk memastikan
+    apakah WhatsApp benar-benar menghubungi server.
 
 ---
 
@@ -287,6 +292,7 @@ Yang perlu diketahui:
 | `503` + `DATABASE_URL belum di-set` | Environment variable tidak sampai ke proses | Isi Environment Variables di panel, atau taruh `.env` di direktori kerja proses |
 | `ERR_TOO_MANY_REDIRECTS` | Aturan `www`/HTTPS ganda | Pilih satu bentuk kanonik domain, hapus aturan redirect yang bertentangan |
 | Preview WhatsApp kosong, padahal link jalan | Server tidak bisa menjangkau situs tujuan (outbound diblokir), situs memblokir bot, atau tidak punya `og:image` | Cek `curl -A "WhatsApp/..." https://DOMAIN/SLUG`; lihat log `[og] gagal mengambil OG ...`; pastikan hosting mengizinkan outbound HTTPS |
+| Preview tetap kosong walau `curl` menunjukkan `og:image` | Crawler tidak pernah sampai ke server (WhatsApp memakai cache preview lama), atau crawler menerima `429` | Lihat log: baris `[og] crawler ... → /SLUG` harus muncul saat link dibagikan. Kalau tidak muncul → cache WhatsApp, pakai slug baru. Pastikan juga `TRUST_PROXY=1` agar rate limit tidak dihitung per IP proxy |
 | `503` padahal build sukses | Proses Node mati saat start | Jalankan `node server/src/index.js` manual; baca `stderr.log` di folder aplikasi |
 
 ### Karakteristik hosting LiteSpeed/Passenger

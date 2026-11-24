@@ -110,6 +110,59 @@ test("redirect 302 juga menyatakan Vary: User-Agent", async () => {
   assert.match(res.headers.get("vary") ?? "", /User-Agent/i);
 });
 
+test("crawler tidak terkena rate limit redirect", async () => {
+  // Regresi: crawler yang menerima 429 tidak akan mengambil preview lagi, dan
+  // WhatsApp meng-cache kegagalan itu — gambar link tersebut hilang permanen.
+  const db3 = createFakePrisma();
+  await db3.link.create({
+    data: { slug: "batas", targetUrl: "https://tujuan.com/batas", userId: "user_1" },
+  });
+
+  // Limiter harus aktif SEBELUM createApp: createLimiter membaca env ini saat
+  // middleware dibuat, bukan saat request.
+  const previous = process.env.RATE_LIMIT_DISABLED;
+  delete process.env.RATE_LIMIT_DISABLED;
+
+  const app = createApp({
+    db: db3,
+    serveFrontend: false,
+    ogFetch: { fetchImpl: targetFetch({ html: TARGET_HTML, calls: [] }), lookup },
+  });
+
+  const srv = app.listen(0);
+  await new Promise((r) => srv.once("listening", r));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+
+  try {
+    // 350 request melewati kuota browser (300/menit): crawler harus tetap 200.
+    for (let i = 0; i < 350; i += 1) {
+      const res = await fetch(`${url}/batas`, {
+        redirect: "manual",
+        headers: { "user-agent": WA_UA },
+      });
+      assert.equal(res.status, 200, `crawler request ke-${i + 1} harus 200, bukan ${res.status}`);
+    }
+
+    // Pengunjung biasa tetap dibatasi pada kuota yang sama.
+    let limited = 0;
+    for (let i = 0; i < 320; i += 1) {
+      const res = await fetch(`${url}/batas`, {
+        redirect: "manual",
+        headers: { "user-agent": BROWSER_UA },
+      });
+      if (res.status === 429) {
+        limited += 1;
+        // 429 tidak boleh di-cache CDN, kalau tidak semua pengunjung ikut kena.
+        assert.match(res.headers.get("cache-control") ?? "", /no-store/);
+      }
+    }
+    assert.ok(limited > 0, "pengunjung biasa harus tetap dibatasi");
+  } finally {
+    srv.close();
+    if (previous !== undefined) process.env.RATE_LIMIT_DISABLED = previous;
+  }
+});
+
 test("berkas statis yang tidak ada tidak menembak database", async () => {
   // /favicon.ico pernah masuk route /:slug sehingga menghasilkan 500 di log
   // setiap kali database bermasalah.

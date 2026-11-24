@@ -19,13 +19,35 @@ const MAX_HEADER_LENGTH = 512;
 export function createRedirectRouter(service, prisma, { ogService, baseUrl } = {}) {
   const router = Router();
 
+  // Kuota dinaikkan dari 120: pengunjung seluler di Indonesia banyak yang
+  // berbagi satu IP publik (CGNAT), sehingga 120/menit per IP mudah habis
+  // hanya dari trafik normal.
   const redirectLimiter = createLimiter({
     windowMs: 60 * 1000,
-    limit: 120,
-    message: { error: "Terlalu banyak permintaan" },
+    limit: 300,
+    handler: (req, res) => {
+      const resetTime = req.rateLimit?.resetTime;
+      if (resetTime) {
+        res.set("Retry-After", String(Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000))));
+      }
+      res.status(429).set("Cache-Control", "no-store").json({ error: "Terlalu banyak permintaan" });
+    },
   });
 
-  router.get("/:slug", redirectLimiter, async (req, res, next) => {
+  /**
+   * Crawler media sosial tidak dibatasi sama sekali.
+   *
+   * Kegagalan crawler mahal dan permanen: WhatsApp menyimpan hasil fetch yang
+   * gagal, jadi satu balasan 429 membuat gambar link itu tidak pernah muncul
+   * lagi walau kuota sudah pulih. Biayanya kecil — satu query database yang
+   * sama seperti pengunjung biasa, dan hasil scrape sudah di-cache.
+   */
+  function limitByAudience(req, res, next) {
+    if (isCrawler(req.get("user-agent"))) return next();
+    return redirectLimiter(req, res, next);
+  }
+
+  router.get("/:slug", limitByAudience, async (req, res, next) => {
     const link = await service.getBySlug(req.params.slug);
 
     // Slug tidak ada: teruskan ke middleware berikutnya. Ini yang membuat
@@ -36,6 +58,13 @@ export function createRedirectRouter(service, prisma, { ogService, baseUrl } = {
     }
 
     const crawler = isCrawler(req.get("user-agent"));
+
+    // Jejak kecil untuk mendiagnosis preview yang tidak muncul: kalau baris ini
+    // TIDAK pernah muncul saat link dibagikan, berarti crawler tidak sampai ke
+    // server (biasanya karena cache WhatsApp atau URL dianggap sudah dikenal).
+    if (crawler) {
+      console.log(`[og] crawler ${req.get("user-agent")} → /${req.params.slug}`);
+    }
 
     if (!link.isActive) {
       if (crawler) {
@@ -105,7 +134,6 @@ async function sendPreview({ res, link, ogService, baseUrl }) {
   if (!og && !link.title && !link.description) {
     return false;
   }
-
   const origin = (baseUrl ?? process.env.BASE_URL ?? "").replace(/\/+$/, "");
   const canonicalUrl = origin ? `${origin}/${link.slug}` : `/${link.slug}`;
 
