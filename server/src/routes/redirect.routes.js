@@ -39,14 +39,24 @@ export function createRedirectRouter(service, prisma, { ogService, baseUrl } = {
 
     if (!link.isActive) {
       if (crawler) {
-        return res.status(404).type("html").send(renderUnavailableHtml("Link tidak ditemukan"));
+        return res
+          .status(404)
+          .vary("User-Agent")
+          .set("Cache-Control", "no-store")
+          .type("html")
+          .send(renderUnavailableHtml("Link tidak ditemukan"));
       }
       return res.status(404).json({ error: "Link tidak ditemukan" });
     }
 
     if (link.expiresAt && link.expiresAt.getTime() < Date.now()) {
       if (crawler) {
-        return res.status(410).type("html").send(renderUnavailableHtml("Link sudah kedaluwarsa"));
+        return res
+          .status(410)
+          .vary("User-Agent")
+          .set("Cache-Control", "no-store")
+          .type("html")
+          .send(renderUnavailableHtml("Link sudah kedaluwarsa"));
       }
       return res.status(410).json({ error: "Link sudah kedaluwarsa" });
     }
@@ -60,6 +70,11 @@ export function createRedirectRouter(service, prisma, { ogService, baseUrl } = {
 
     // 302 (bukan 301) supaya browser tidak meng-cache permanen — target
     // masih bisa diubah pemilik link.
+    //
+    // Vary wajib: URL yang sama menghasilkan HTML untuk crawler dan 302 untuk
+    // pengunjung, jadi cache bersama tidak boleh menyamakan keduanya.
+    // res.vary() menambahkan, bukan menimpa Vary: Origin dari middleware CORS.
+    res.vary("User-Agent");
     res.set("Cache-Control", "no-store");
     res.redirect(302, link.targetUrl);
 
@@ -94,7 +109,17 @@ async function sendPreview({ res, link, ogService, baseUrl }) {
   const origin = (baseUrl ?? process.env.BASE_URL ?? "").replace(/\/+$/, "");
   const canonicalUrl = origin ? `${origin}/${link.slug}` : `/${link.slug}`;
 
-  res.set("Cache-Control", "public, max-age=300");
+  // HTML ini hanya untuk crawler. `private` mencegah CDN/reverse proxy
+  // menyimpannya — kalau ikut ter-cache, pengunjung biasa akan menerima
+  // halaman ini alih-alih 302 (pernah terjadi di Hostinger: CDN meng-cache
+  // response lalu menyajikannya ke semua User-Agent). `Vary` jadi lapis
+  // kedua untuk proxy yang mengabaikan `private`.
+  //
+  // Tidak masalah kalau crawler selalu menembak origin: metadata OG sudah
+  // di-cache di database (og.service.js), jadi tidak ada fetch ulang ke
+  // situs tujuan.
+  res.set("Cache-Control", "private, no-store, max-age=0");
+  res.vary("User-Agent");
   res.set("X-Robots-Tag", "noindex");
   res.status(200).type("html").send(renderOgHtml({ link, og, canonicalUrl }));
   return true;

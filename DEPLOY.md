@@ -113,26 +113,32 @@ Penjelasan tiap variabel:
 | `CORS_ORIGIN` | ✅ | Origin yang diizinkan untuk request bermutasi (cek CSRF). Isi `https://DOMAIN` |
 | `DATABASE_URL` | ✅ | Koneksi MySQL |
 | `SESSION_TTL_DAYS` | — | Masa berlaku login, default 7 hari |
-| `TRUST_PROXY` | — | Lihat bagian di bawah |
+| `TRUST_PROXY` | — | Lihat bagian di bawah. **Wajib diisi `1` di Hostinger** |
 | `OG_FETCH_TIMEOUT_MS` | — | Batas waktu mengambil preview OG dari situs tujuan, default `5000` |
 | `OG_CACHE_TTL_HOURS` | — | Umur cache preview OG, default `168` (7 hari) |
 
-### `TRUST_PROXY` — penting, jangan asal isi
+### `TRUST_PROXY` — wajib diisi di Hostinger
 
-Hostinger menaruh aplikasi di belakang reverse proxy. Tanpa `TRUST_PROXY`:
+Hostinger menaruh aplikasi di belakang CDN + reverse proxy LiteSpeed, dan selalu mengirim header `X-Forwarded-For`. Tanpa `TRUST_PROXY`:
 
-- `req.ip` berisi IP proxy, sehingga **semua pengunjung terlihat dari satu IP** → rate limit memblokir semua orang sekaligus, dan statistik kunjungan tidak berguna.
+- `req.ip` berisi IP proxy, sehingga **semua pengunjung terlihat dari satu IP** → rate limit 120/menit dibagi seluruh pengunjung situs, dan statistik kunjungan tidak berguna.
+- `express-rate-limit` mencetak `ValidationError: The 'X-Forwarded-For' header is set but the Express 'trust proxy' setting is false` di log pada setiap request.
+- Kalau limiter sampai menolak, crawler WhatsApp yang mengambil preview bisa menerima `429` — preview gagal muncul.
 
-Dengan `TRUST_PROXY` yang salah (mis. `true` tanpa proxy nyata):
+**Set `TRUST_PROXY=1`.** Itu artinya "percaya satu lapis proxy di depan" (CDN Hostinger), sehingga Express membaca IP asli dari header. Kalau ternyata IP di tabel `Visit` masih IP proxy, naikkan jadi `TRUST_PROXY=2`.
+
+Dengan `TRUST_PROXY` yang salah (mis. `true` tanpa batas):
 
 - Klien bisa memalsukan header `X-Forwarded-For` dan **melewati rate limit**.
 
-Cara aman menentukan nilainya:
+Verifikasi setelah deploy:
 
-1. Coba tanpa `TRUST_PROXY` dulu.
-2. Buka `/api/health` lalu cek apakah IP pengunjung tercatat benar pada tabel `Visit` (lihat Prisma Studio atau query MySQL).
-3. Kalau semua IP sama dengan IP proxy, set `TRUST_PROXY=1`.
-4. Kalau proxy berlapis, naikkan angkanya.
+```sh
+# request dari IP berbeda harus menghasilkan baris Visit dengan IP berbeda
+cd server && npm run db:studio
+```
+
+atau bandingkan IP di tabel `Visit` dengan IP publikmu.
 
 ### Karakter khusus di `DATABASE_URL`
 
@@ -256,6 +262,11 @@ Yang perlu diketahui:
 7. WhatsApp meng-cache preview per URL. Untuk memaksa refresh, pakai slug baru
    atau tambahkan `?v=2` saat membagikan.
 8. Crawler **tidak** dihitung sebagai klik.
+9. **HTML preview tidak boleh di-cache CDN.** Response-nya memakai
+   `Cache-Control: private, no-store` + `Vary: User-Agent`, karena URL yang sama
+   menghasilkan HTML untuk crawler dan `302` untuk pengunjung. Kalau CDN
+   menyimpan versi crawler, pengunjung biasa akan melihat halaman
+   "Mengalihkan ke …" alih-alih langsung dialihkan.
 
 ---
 

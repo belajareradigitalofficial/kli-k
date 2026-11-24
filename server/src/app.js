@@ -14,6 +14,7 @@ import { createOriginCheck, createSessionLoader } from "./middleware/auth.js";
 import { errorHandler, notFound } from "./middleware/error.js";
 import {
   createSpaFallback,
+  createStaticFileGuard,
   createStaticMiddleware,
   hasFrontendBuild,
   resolveDistDir,
@@ -36,6 +37,14 @@ export function createApp({ db = prisma, serveFrontend, distDir, ogService, ogFe
   if (process.env.TRUST_PROXY) {
     const raw = process.env.TRUST_PROXY;
     app.set("trust proxy", raw === "true" ? true : /^\d+$/.test(raw) ? Number(raw) : raw);
+  } else if (process.env.NODE_ENV === "production") {
+    // Hostinger selalu mengirim X-Forwarded-For. Tanpa trust proxy, req.ip
+    // berisi IP proxy: rate limit jadi satu kuota untuk semua pengunjung dan
+    // express-rate-limit mencetak ValidationError pada setiap request.
+    console.warn(
+      "[config] TRUST_PROXY belum di-set. Di belakang CDN/reverse proxy " +
+        "(Hostinger), set TRUST_PROXY=1 agar IP pengunjung terbaca benar.",
+    );
   }
 
   app.use(helmet());
@@ -92,6 +101,10 @@ export function createApp({ db = prisma, serveFrontend, distDir, ogService, ogFe
         "Jalankan `npm run build` di client/ untuk menyajikan antarmuka.",
     );
   }
+
+  // Berkas statis yang sering diminta tapi mungkin tidak ada di build.
+  // Dipasang sebelum route redirect supaya tidak menembak database.
+  app.use(createStaticFileGuard());
 
   // Redirect publik. Slug yang tidak ditemukan diteruskan (next), sehingga
   // bisa jatuh ke fallback SPA di bawah. Slug yang ada tetap 302.

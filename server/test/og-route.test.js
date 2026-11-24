@@ -86,6 +86,57 @@ test("crawler WhatsApp mendapat HTML OG dari halaman tujuan", async () => {
   assert.match(html, /<meta property="og:url" content="https:\/\/kli-k\.id\/promo">/);
 });
 
+test("HTML preview tidak boleh di-cache bersama (CDN/proxy)", async () => {
+  // Regresi: directive `public` membuat CDN Hostinger menyimpan HTML crawler
+  // lalu menyajikannya ke pengunjung biasa (yang seharusnya dapat 302).
+  const res = await get("/promo", WA_UA);
+  const cacheControl = res.headers.get("cache-control") ?? "";
+
+  assert.match(cacheControl, /no-store/);
+  assert.doesNotMatch(cacheControl, /public/);
+
+  // Vary: Origin dari CORS tidak boleh hilang saat menambah User-Agent.
+  const vary = res.headers.get("vary") ?? "";
+  assert.match(vary, /User-Agent/i);
+  assert.match(vary, /Origin/i);
+});
+
+test("redirect 302 juga menyatakan Vary: User-Agent", async () => {
+  // URL yang sama punya dua bentuk response; cache bersama harus dibedakan
+  // per User-Agent, bukan hanya per URL. Memakai /manual supaya penghitung
+  // klik /promo di tes berikutnya tidak terpengaruh.
+  const res = await get("/manual", BROWSER_UA);
+  assert.equal(res.status, 302);
+  assert.match(res.headers.get("vary") ?? "", /User-Agent/i);
+});
+
+test("berkas statis yang tidak ada tidak menembak database", async () => {
+  // /favicon.ico pernah masuk route /:slug sehingga menghasilkan 500 di log
+  // setiap kali database bermasalah.
+  const db2 = createFakePrisma();
+  let lookups = 0;
+  const original = db2.link.findUnique;
+  db2.link.findUnique = async (args) => {
+    lookups += 1;
+    return original(args);
+  };
+
+  const app = createApp({ db: db2, serveFrontend: false });
+  const srv = app.listen(0);
+  await new Promise((r) => srv.once("listening", r));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+
+  try {
+    for (const p of ["/favicon.ico", "/robots.txt", "/sitemap.xml"]) {
+      const res = await fetch(`${url}${p}`);
+      assert.equal(res.status, 404, `${p} harus 404`);
+    }
+    assert.equal(lookups, 0, "berkas statis tidak boleh menembak database");
+  } finally {
+    srv.close();
+  }
+});
+
 test("crawler tidak dihitung sebagai klik", async () => {
   await get("/promo", WA_UA);
   const link = await db.link.findUnique({ where: { slug: "promo" } });

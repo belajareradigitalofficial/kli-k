@@ -60,3 +60,23 @@ export function createSpaFallback({ distDir }) {
 export function hasFrontendBuild(distDir = resolveDistDir()) {
   return fs.existsSync(path.join(distDir, "index.html"));
 }
+
+/**
+ * Berkas yang jelas-jelas statis tapi mungkin tidak ada di hasil build
+ * (browser dan alat lain tetap memintanya).
+ *
+ * Tanpa ini permintaan seperti `/favicon.ico` jatuh ke route `/:slug`,
+ * menembak database untuk slug yang tidak mungkin ada — dan saat database
+ * bermasalah, satu file ikon bisa menghasilkan baris error 500 di log.
+ */
+const STATIC_FILE_PATHS = new Set(["/favicon.ico", "/robots.txt", "/sitemap.xml"]);
+
+export function createStaticFileGuard() {
+  return function staticFileGuard(req, res, next) {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (!STATIC_FILE_PATHS.has(req.path)) return next();
+    // Berkas asli (kalau ada) sudah dilayani express.static sebelumnya.
+    res.set("Cache-Control", "public, max-age=3600");
+    res.status(404).end();
+  };
+}
